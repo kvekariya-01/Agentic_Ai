@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,4 +16,22 @@ def get_db():
     try:
         yield db
     finally:
+=======
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
+from dotenv import load_dotenv
+
+load_dotenv()
+
+engine = create_engine(os.getenv("DATABASE_URL"), poolclass=NullPool)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+>>>>>>> 6decf83 (Memory & Logging Layer)
         db.close()
