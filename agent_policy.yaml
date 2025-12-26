@@ -1,0 +1,15 @@
+# agent_policy.yaml
+version: "1.0"
+allowed_modules:
+  - "math"
+  - "json"
+  - "http_request"
+
+rate_limits:
+  max_requests_per_minute: 60
+  burst_limit: 5
+
+restricted_actions:
+  - "delete_database"
+  - "modify_system_env"
+  - "access_root"
