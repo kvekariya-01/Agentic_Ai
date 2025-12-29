@@ -1,31 +1,116 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-import uuid
 import logging
+import os
 from database import get_db
 from models import (
     DBAgent, DBRun, DBTask, DBReflection, DBFeedback,
-    AgentCreate, TaskUpdate, ReflectionCreate, FeedbackCreate,
+    AgentCreate, AgentUpdate, TaskUpdate, ReflectionCreate, FeedbackCreate,
     AgentResponse, RunResponse, TaskResponse, ReflectionResponse,
     RunTraceResponse, FeedbackResponse, RunStartResponse
 )
+from policy_middleware import PolicyMiddleware
 
 app = FastAPI(title="Agent API - Memory & Logging")
+
+# Initialize policy middleware
+policy_path = os.getenv("POLICY_PATH", "./agent_policy.yaml")
+policy_middleware = PolicyMiddleware(policy_path)
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 
-@app.post("/agents")
+@app.post("/agents", response_model=AgentResponse)
 def create_agent(agent: AgentCreate, db: Session = Depends(get_db)):
-    new_agent = DBAgent(name=agent.name, role=agent.role)
+    new_agent = DBAgent(
+        name=agent.name,
+        description=agent.description,
+        module=agent.module,
+        sub_module=agent.sub_module,
+        role=agent.role,
+        temperature=agent.temperature,
+        max_tokens=agent.max_tokens,
+        system_prompt=agent.system_prompt
+    )
     db.add(new_agent)
     db.commit()
     db.refresh(new_agent)
-    return new_agent
+    return AgentResponse(
+        agent_id=new_agent.id,
+        name=new_agent.name,
+        description=new_agent.description,
+        module=new_agent.module,
+        sub_module=new_agent.sub_module,
+        status=new_agent.status,
+        created_at=new_agent.created_at.isoformat(),
+        temperature=new_agent.temperature,
+        max_tokens=new_agent.max_tokens,
+        system_prompt=new_agent.system_prompt
+    )
+
+@app.get("/agents", response_model=list[AgentResponse])
+def get_agents(status: str = None, db: Session = Depends(get_db)):
+    query = db.query(DBAgent)
+    if status:
+        query = query.filter(DBAgent.status == status)
+    agents = query.all()
+    return [
+        AgentResponse(
+            agent_id=agent.id,
+            name=agent.name,
+            description=agent.description,
+            module=agent.module,
+            sub_module=agent.sub_module,
+            status=agent.status,
+            created_at=agent.created_at.isoformat(),
+            temperature=agent.temperature,
+            max_tokens=agent.max_tokens,
+            system_prompt=agent.system_prompt
+        ) for agent in agents
+    ]
+
+@app.get("/agents/deployed", response_model=list[AgentResponse])
+def get_deployed_agents(db: Session = Depends(get_db)):
+    agents = db.query(DBAgent).filter(DBAgent.status == "deployed").all()
+    return [
+        AgentResponse(
+            agent_id=agent.id,
+            name=agent.name,
+            description=agent.description,
+            module=agent.module,
+            sub_module=agent.sub_module,
+            status=agent.status,
+            created_at=agent.created_at.isoformat(),
+            temperature=agent.temperature,
+            max_tokens=agent.max_tokens,
+            system_prompt=agent.system_prompt
+        ) for agent in agents
+    ]
+
+@app.patch("/agents/{agent_id}", response_model=AgentResponse)
+def update_agent(agent_id: str, agent_update: AgentUpdate, db: Session = Depends(get_db)):
+    agent = db.query(DBAgent).filter(DBAgent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    agent.status = agent_update.status
+    db.commit()
+    db.refresh(agent)
+    return AgentResponse(
+        agent_id=agent.id,
+        name=agent.name,
+        description=agent.description,
+        module=agent.module,
+        sub_module=agent.sub_module,
+        status=agent.status,
+        created_at=agent.created_at.isoformat(),
+        temperature=agent.temperature,
+        max_tokens=agent.max_tokens,
+        system_prompt=agent.system_prompt
+    )
 
 @app.post("/agents/{agent_id}/run", response_model=RunStartResponse)
-def start_run(agent_id: uuid.UUID, db: Session = Depends(get_db)):
+def start_run(agent_id: str, db: Session = Depends(get_db)):
     new_run = DBRun(agent_id=agent_id, status="started")
     db.add(new_run)
     db.commit()
@@ -57,7 +142,7 @@ def start_run(agent_id: uuid.UUID, db: Session = Depends(get_db)):
 
 # Endpoint to update Task Result (Logging)
 @app.patch("/tasks/{task_id}")
-def update_task(task_id: uuid.UUID, data: TaskUpdate, db: Session = Depends(get_db)):
+def update_task(task_id: str, data: TaskUpdate, db: Session = Depends(get_db)):
     task = db.query(DBTask).filter(DBTask.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -69,7 +154,7 @@ def update_task(task_id: uuid.UUID, data: TaskUpdate, db: Session = Depends(get_
 
 # Endpoint to add Reflection (Memory)
 @app.post("/runs/{run_id}/reflections", response_model=ReflectionResponse)
-def add_reflection(run_id: uuid.UUID, reflection: ReflectionCreate, db: Session = Depends(get_db)):
+def add_reflection(run_id: str, reflection: ReflectionCreate, db: Session = Depends(get_db)):
     logging.info(f"Adding reflection for run_id: {run_id}")
     # Verify run exists
     run = db.query(DBRun).filter(DBRun.id == run_id).first()
@@ -105,7 +190,7 @@ def get_runs(db: Session = Depends(get_db)):
 
 # Endpoint to fetch a specific run
 @app.get("/runs/{run_id}", response_model=RunResponse)
-def get_run(run_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_run(run_id: str, db: Session = Depends(get_db)):
     run = db.query(DBRun).filter(DBRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -118,7 +203,7 @@ def get_run(run_id: uuid.UUID, db: Session = Depends(get_db)):
 
 # Endpoint to fetch run trace (complete execution history)
 @app.get("/runs/{run_id}/trace", response_model=RunTraceResponse)
-def get_run_trace(run_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_run_trace(run_id: str, db: Session = Depends(get_db)):
     run = db.query(DBRun).filter(DBRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -156,17 +241,17 @@ def get_run_trace(run_id: uuid.UUID, db: Session = Depends(get_db)):
 
 # Endpoint to submit feedback
 @app.post("/runs/{run_id}/feedback", response_model=FeedbackResponse)
-def submit_feedback(run_id: uuid.UUID, feedback: FeedbackCreate, db: Session = Depends(get_db)):
+def submit_feedback(run_id: str, feedback: FeedbackCreate, db: Session = Depends(get_db)):
     # Verify run exists
     run = db.query(DBRun).filter(DBRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    
+
     new_feedback = DBFeedback(run_id=run_id, rating=str(feedback.rating), comment=feedback.comment)
     db.add(new_feedback)
     db.commit()
     db.refresh(new_feedback)
-    
+
     return FeedbackResponse(
         id=new_feedback.id,
         run_id=new_feedback.run_id,
@@ -174,3 +259,42 @@ def submit_feedback(run_id: uuid.UUID, feedback: FeedbackCreate, db: Session = D
         comment=new_feedback.comment,
         created_at=new_feedback.created_at.isoformat()
     )
+
+# Governance endpoints
+@app.get("/audit-log")
+def get_audit_log(filter_violations: bool = False):
+    return {"audit_log": policy_middleware.get_audit_log(filter_violations)}
+
+@app.get("/rate-limits")
+def get_rate_limits():
+    return policy_middleware.get_rate_limit_status()
+
+# Metrics endpoint
+@app.get("/metrics")
+def get_metrics():
+    # Simple metrics: count of runs, tasks, etc.
+    # In real implementation, use prometheus or similar
+    return {
+        "total_runs": 0,  # Would query DB
+        "successful_runs": 0,
+        "average_latency": 0.0,
+        "success_score": 0.0
+    }
+
+# Manual override endpoint
+@app.post("/governance/override")
+def manual_override(action: str, module: str, reason: str):
+    # Allow admin to override policy
+    # In real implementation, check auth
+    policy_middleware.audit_log.append(f"[MANUAL OVERRIDE] {action} in {module} - Reason: {reason}")
+    return {"status": "override_granted"}
+
+# Approval-required actions endpoint
+@app.post("/governance/approve-action")
+def approve_action(action: str, module: str, approved: bool):
+    if approved:
+        policy_middleware.audit_log.append(f"[APPROVAL GRANTED] {action} in {module}")
+        return {"status": "approved"}
+    else:
+        policy_middleware.audit_log.append(f"[APPROVAL DENIED] {action} in {module}")
+        return {"status": "denied"}
