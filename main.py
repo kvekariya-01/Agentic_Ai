@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 import logging
 import os
+import uuid
 from database import get_db
 from models import (
     DBAgent, DBRun, DBTask, DBReflection, DBFeedback,
@@ -111,7 +112,17 @@ def update_agent(agent_id: str, agent_update: AgentUpdate, db: Session = Depends
 
 @app.post("/agents/{agent_id}/run", response_model=RunStartResponse)
 def start_run(agent_id: str, db: Session = Depends(get_db)):
-    new_run = DBRun(agent_id=agent_id, status="started")
+    # Verify agent_id is a valid UUID and agent exists
+    try:
+        agent_uuid = uuid.UUID(agent_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid agent_id format")
+
+    agent = db.query(DBAgent).filter(DBAgent.id == agent_uuid).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    new_run = DBRun(agent_id=agent_uuid, status="started")
     db.add(new_run)
     db.commit()
     db.refresh(new_run)
@@ -247,7 +258,7 @@ def submit_feedback(run_id: str, feedback: FeedbackCreate, db: Session = Depends
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    new_feedback = DBFeedback(run_id=run_id, rating=str(feedback.rating), comment=feedback.comment)
+    new_feedback = DBFeedback(run_id=run_id, rating=feedback.rating, comment=feedback.comment)
     db.add(new_feedback)
     db.commit()
     db.refresh(new_feedback)

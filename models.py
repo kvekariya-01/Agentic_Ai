@@ -1,55 +1,56 @@
 import uuid
-from sqlalchemy import Column, String, ForeignKey, DateTime, Text
+from sqlalchemy import Column, String, ForeignKey, DateTime, Text, Integer, Float
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
-from pydantic import BaseModel, validator
+from sqlalchemy.dialects.postgresql import UUID
+from pydantic import BaseModel, validator, UUID4
 from typing import Optional
 
 Base = declarative_base()
 
 class DBAgent(Base):
     __tablename__ = "agents"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    module = Column(String, nullable=True)
-    sub_module = Column(String, nullable=True)
+    description = Column(Text)
+    module = Column(String, nullable=False)
+    sub_module = Column(String)
     role = Column(String, nullable=False)
+    temperature = Column(Float, nullable=False)
+    max_tokens = Column(Integer, nullable=False)
+    system_prompt = Column(Text)
     status = Column(String, default="draft")  # draft, deployed, active, disabled
-    temperature = Column(String, nullable=True)  # e.g., "0.7"
-    max_tokens = Column(String, nullable=True)  # e.g., "4096"
-    system_prompt = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class DBRun(Base):
     __tablename__ = "agent_runs"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    agent_id = Column(String, ForeignKey("agents.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"))
     status = Column(String, default="started")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class DBTask(Base):
     __tablename__ = "agent_tasks"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String, ForeignKey("agent_runs.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("agent_runs.id"))
     description = Column(Text, nullable=False)
     status = Column(String, default="queued")
-    result = Column(Text, nullable=True) # Logging Result
+    result = Column(Text, nullable=True)  # Logging Result
     error = Column(Text, nullable=True)  # Logging Error
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class DBReflection(Base):
-    __tablename__ = "agent_reflections" # Episodic Memory
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String, ForeignKey("agent_runs.id"))
+    __tablename__ = "agent_reflections"  # Episodic Memory
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("agent_runs.id"))
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class DBFeedback(Base):
     __tablename__ = "agent_feedback"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String, ForeignKey("agent_runs.id"))
-    rating = Column(String, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("agent_runs.id"))
+    rating = Column(Integer, nullable=False)
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -57,11 +58,11 @@ class DBFeedback(Base):
 class AgentCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    module: Optional[str] = None
+    module: str
     sub_module: Optional[str] = None
     role: str
-    temperature: Optional[str] = None
-    max_tokens: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
 
 class AgentUpdate(BaseModel):
@@ -84,26 +85,26 @@ class ReflectionCreate(BaseModel):
 
 # Response Models
 class AgentResponse(BaseModel):
-    agent_id: str
+    agent_id: UUID4
     name: str
     description: Optional[str] = None
-    module: Optional[str] = None
+    module: str
     sub_module: Optional[str] = None
     status: str
     created_at: str
-    temperature: Optional[str] = None
-    max_tokens: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
 
 class RunResponse(BaseModel):
-    id: str
-    agent_id: str
+    id: UUID4
+    agent_id: UUID4
     status: str
     created_at: str
 
 class TaskResponse(BaseModel):
-    id: str
-    run_id: str
+    id: UUID4
+    run_id: UUID4
     description: str
     status: str
     result: Optional[str] = None
@@ -111,8 +112,8 @@ class TaskResponse(BaseModel):
     created_at: str
 
 class ReflectionResponse(BaseModel):
-    id: str
-    run_id: str
+    id: UUID4
+    run_id: UUID4
     content: str
     created_at: str
 
@@ -126,8 +127,8 @@ class FeedbackCreate(BaseModel):
     comment: Optional[str] = None
 
 class FeedbackResponse(BaseModel):
-    id: str
-    run_id: str
+    id: UUID4
+    run_id: UUID4
     rating: int
     comment: Optional[str] = None
     created_at: str

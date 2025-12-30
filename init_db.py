@@ -15,20 +15,22 @@ from models import Base
 
 def init_database():
     """Create all database tables"""
+    print("Dropping existing tables...")
+    Base.metadata.drop_all(bind=engine)
     print("Creating database tables...")
-    
+
     try:
         # Create all tables
         Base.metadata.create_all(bind=engine)
         print("Database tables created successfully!")
-        
+
         # List created tables
         print("\nCreated tables:")
         for table_name in Base.metadata.tables.keys():
             print(f"  - {table_name}")
-            
+
         return True
-        
+
     except Exception as e:
         print(f"Error creating database tables: {e}")
         return False
