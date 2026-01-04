@@ -1,0 +1,20 @@
+# agent_policy.yaml
+
+rate_limits:
+  max_requests_per_minute: 60
+  burst_limit: 10
+
+allowed_modules:
+  - math
+  - http_request
+  - agent
+  - memory
+  - reflection
+  - feedback
+
+restricted_actions:
+  - delete_database
+  - shutdown_system
+  - wipe_memory
+  - format_disk
+
